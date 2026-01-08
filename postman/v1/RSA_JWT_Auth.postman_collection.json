@@ -1,0 +1,318 @@
+{
+	"info": {
+		"_postman_id": "rsa-jwt-auth-collection",
+		"name": "RSA JWT Auth System",
+		"description": "Complete API collection for RSA-based JWT authentication with 2FA and RBAC.\n\n**Base URL:** http://localhost:1134/api\n\n**Authentication Flow:**\n1. Register or Login (receives OTP via email/logs)\n2. Verify OTP (receives access_token and refresh_token)\n3. Use access_token for protected endpoints\n\n**Default Admin Credentials:**\n- Username: admin\n- Password: Admin@123456\n- Email: admin@rsajwt.local",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "1. Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"dob\": \"1995-05-15\",\n  \"address\": \"123 Main Street\",\n  \"gender\": \"male\",\n  \"nationality\": \"USA\",\n  \"email\": \"john@example.com\",\n  \"username\": \"johndoe\",\n  \"phone_number\": \"+19876543210\",\n  \"password\": \"John@123456\",\n  \"password_confirmation\": \"John@123456\",\n  \"role\": \"user\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"register"
+							]
+						},
+						"description": "Create a new user account. OTP will be sent to the provided email address.\n\n**Response:** User ID and email confirmation."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Login - Step 1 (Get OTP)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Save email for next request",
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.data && response.data.email) {",
+									"        pm.environment.set(\"user_email\", response.data.email);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"identifier\": \"admin\",\n  \"password\": \"Admin@123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticate with username/email and password. OTP will be sent to registered email.\n\n**Note:** Check application logs for OTP code:\n- Docker: `docker-compose logs backend | grep OTP`\n- Local: `php artisan pail | grep OTP`"
+					},
+					"response": []
+				},
+				{
+					"name": "3. Verify OTP - Step 2 (Get Tokens)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Automatically save tokens to environment",
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.data) {",
+									"        pm.environment.set(\"access_token\", response.data.access_token);",
+									"        pm.environment.set(\"refresh_token\", response.data.refresh_token);",
+									"        console.log(\"Tokens saved to environment!\");",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"identifier\": \"admin\",\n  \"otp\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/verify-otp",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"verify-otp"
+							]
+						},
+						"description": "Verify the OTP received via email. Returns JWT access and refresh tokens.\n\n**Important:** Replace `1234` with the actual OTP from logs.\n\n**Auto-saves:** access_token and refresh_token to environment variables."
+					},
+					"response": []
+				},
+				{
+					"name": "4. Refresh Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Update access token",
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.data && response.data.access_token) {",
+									"        pm.environment.set(\"access_token\", response.data.access_token);",
+									"        console.log(\"Access token refreshed!\");",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/refresh-token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"refresh-token"
+							]
+						},
+						"description": "Renew access token using refresh token.\n\n**Auto-saves:** New access_token to environment."
+					},
+					"response": []
+				},
+				{
+					"name": "5. Logout",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/logout",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Logout and revoke refresh token. Requires valid access token in Authorization header."
+					},
+					"response": []
+				}
+			],
+			"description": "Public authentication endpoints for registration, login, OTP verification, and token management."
+		},
+		{
+			"name": "User Management",
+			"item": [
+				{
+					"name": "Get Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/get-profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"get-profile"
+							]
+						},
+						"description": "Get authenticated user's profile information.\n\n**Requires:** Valid JWT access token in Authorization header."
+					},
+					"response": []
+				},
+				{
+					"name": "Create User (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"first_name\": \"Jane\",\n  \"last_name\": \"Smith\",\n  \"dob\": \"1990-08-20\",\n  \"address\": \"456 Oak Avenue\",\n  \"gender\": \"female\",\n  \"nationality\": \"Canada\",\n  \"email\": \"jane@example.com\",\n  \"username\": \"janesmith\",\n  \"phone_number\": \"+15551234567\",\n  \"password\": \"Jane@123456\",\n  \"password_confirmation\": \"Jane@123456\",\n  \"role\": \"user\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/create-user",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"create-user"
+							]
+						},
+						"description": "Admin-only endpoint to create new users.\n\n**Requires:** Admin role + valid JWT access token.\n\n**Returns:** 403 Forbidden if user is not admin."
+					},
+					"response": []
+				}
+			],
+			"description": "Protected endpoints for user profile and admin user management."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:1134/api",
+			"type": "string"
+		}
+	]
+}
