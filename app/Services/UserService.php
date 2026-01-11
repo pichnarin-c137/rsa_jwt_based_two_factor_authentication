@@ -5,9 +5,10 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\Credential;
 use App\Models\Role;
+use App\Exceptions\RoleNotFoundException;
+use App\Exceptions\UserNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Exception;
 
 class UserService
 {
@@ -25,7 +26,7 @@ class UserService
             $role = Role::where('role', $userData['role'] ?? 'user')->first();
 
             if (!$role) {
-                throw new Exception('Invalid role');
+                throw new RoleNotFoundException("Role '{$userData['role']}' not found");
             }
 
             // Create user
@@ -60,7 +61,11 @@ class UserService
      */
     public function getUserProfile(string $userId): array
     {
-        $user = User::with(['role', 'credential'])->findOrFail($userId);
+        $user = User::with(['role', 'credential'])->find($userId);
+
+        if (!$user) {
+            throw new UserNotFoundException('User not found', 0, null, ['user_id' => $userId]);
+        }
 
         return [
             'id' => $user->id,
@@ -85,7 +90,12 @@ class UserService
      */
     public function toggleSuspension(string $userId): User
     {
-        $user = User::findOrFail($userId);
+        $user = User::find($userId);
+
+        if (!$user) {
+            throw new UserNotFoundException('User not found', 0, null, ['user_id' => $userId]);
+        }
+
         $user->update(['is_suspended' => !$user->is_suspended]);
 
         return $user;

@@ -5,7 +5,13 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\RefreshToken;
 use Carbon\Carbon;
-use Exception;
+use App\Exceptions\JwtKeyNotFoundException;
+use App\Exceptions\InvalidTokenException;
+use App\Exceptions\TokenExpiredException;
+use App\Exceptions\InvalidTokenTypeException;
+use App\Exceptions\RefreshTokenRevokedException;
+use App\Exceptions\UserNotFoundException;
+use App\Exceptions\AccountSuspendedException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
@@ -18,8 +24,33 @@ class JwtService
 
     public function __construct()
     {
-        $this->privateKey = file_get_contents(storage_path(config('jwt.private_key_path', 'keys/jwt_private.pem')));
-        $this->publicKey = file_get_contents(storage_path(config('jwt.public_key_path', 'keys/jwt_public.pem')));
+        try {
+            $privateKeyPath = storage_path(config('jwt.private_key_path', 'keys/jwt_private.pem'));
+            $publicKeyPath = storage_path(config('jwt.public_key_path', 'keys/jwt_public.pem'));
+
+            // Check if key files exist
+            if (!file_exists($privateKeyPath)) {
+                throw new JwtKeyNotFoundException("JWT private key not found at: {$privateKeyPath}");
+            }
+
+            if (!file_exists($publicKeyPath)) {
+                throw new JwtKeyNotFoundException("JWT public key not found at: {$publicKeyPath}");
+            }
+
+            // Read key files
+            $this->privateKey = file_get_contents($privateKeyPath);
+            $this->publicKey = file_get_contents($publicKeyPath);
+
+            // Verify successful read
+            if ($this->privateKey === false || $this->publicKey === false) {
+                throw new JwtKeyNotFoundException("Failed to read JWT key files");
+            }
+        } catch (JwtKeyNotFoundException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new JwtKeyNotFoundException("Error loading JWT keys: " . $e->getMessage(), 0, $e);
+        }
+
         $this->accessTokenExpiry = config('jwt.access_token_expiry', 1440); // minutes
         $this->refreshTokenExpiry = config('jwt.refresh_token_expiry', 43200); // minutes
     }
@@ -76,8 +107,12 @@ class JwtService
     {
         try {
             return JWT::decode($token, new Key($this->publicKey, 'RS256'));
-        } catch (Exception $e) {
-            throw new Exception('Invalid or expired token: ' . $e->getMessage());
+        } catch (\Firebase\JWT\ExpiredException $e) {
+            throw new TokenExpiredException('Token has expired', 0, $e);
+        } catch (\Firebase\JWT\SignatureInvalidException $e) {
+            throw new InvalidTokenException('Token signature is invalid', 0, $e);
+        } catch (\Throwable $e) {
+            throw new InvalidTokenException('Invalid token: ' . $e->getMessage(), 0, $e);
         }
     }
 
@@ -90,7 +125,7 @@ class JwtService
         $decoded = $this->validateToken($refreshToken);
 
         if ($decoded->type !== 'refresh') {
-            throw new Exception('Invalid token type');
+            throw new InvalidTokenTypeException('Token must be a refresh token');
         }
 
         // Check if token exists in DB and is valid
@@ -98,15 +133,27 @@ class JwtService
             ->where('user_id', $decoded->user_id)
             ->first();
 
-        if (!$storedToken || !$storedToken->isValid()) {
-            throw new Exception('Refresh token is invalid or revoked');
+        if (!$storedToken) {
+            throw new InvalidTokenException('Refresh token not found in database');
+        }
+
+        if ($storedToken->is_revoked) {
+            throw new RefreshTokenRevokedException('Refresh token has been revoked');
+        }
+
+        if (!$storedToken->isValid()) {
+            throw new TokenExpiredException('Refresh token has expired');
         }
 
         // Get user
-        $user = User::with('role')->findOrFail($decoded->user_id);
+        $user = User::with('role')->find($decoded->user_id);
+
+        if (!$user) {
+            throw new UserNotFoundException('User not found', 0, null, ['user_id' => $decoded->user_id]);
+        }
 
         if ($user->isSuspended()) {
-            throw new Exception('User account is suspended');
+            throw new AccountSuspendedException('User account is suspended');
         }
 
         // Generate new access token

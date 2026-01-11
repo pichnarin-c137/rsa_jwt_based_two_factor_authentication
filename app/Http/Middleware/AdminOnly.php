@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\AdminOnlyException;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,10 +14,7 @@ class AdminOnly
         $role = $request->get('auth_role');
 
         if (!$role || strtolower($role) !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden - Admin access required'
-            ], 403);
+            throw new AdminOnlyException('Admin access required for this resource');
         }
 
         return $next($request);

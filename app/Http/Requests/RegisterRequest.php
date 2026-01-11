@@ -23,7 +23,6 @@ class RegisterRequest extends FormRequest
             'address' => ['required', 'string', 'max:500'],
             'gender' => ['required', 'in:male,female,other'],
             'nationality' => ['required', 'string', 'max:100'],
-            'role' => ['sometimes', 'string', 'in:admin,user'],
 
             // Credential data
             'email' => ['required', 'email', 'max:255', 'unique:credentials,email'],
