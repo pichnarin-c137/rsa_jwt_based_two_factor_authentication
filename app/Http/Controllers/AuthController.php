@@ -10,7 +10,6 @@ use App\Services\AuthService;
 use App\Services\UserService;
 use App\Services\JwtService;
 use Illuminate\Http\JsonResponse;
-use Exception;
 
 class AuthController extends Controller
 {
@@ -21,36 +20,31 @@ class AuthController extends Controller
     ) {}
 
     /**
-     * Register new user (admin creates account)
+     * Register new user (public registration - creates regular users only)
      */
     public function register(RegisterRequest $request): JsonResponse
     {
-        try {
-            $userData = $request->only([
-                'first_name', 'last_name', 'dob', 'address', 'gender', 'nationality', 'role'
-            ]);
+        $userData = $request->only([
+            'first_name', 'last_name', 'dob', 'address', 'gender', 'nationality'
+        ]);
 
-            $credentialData = $request->only([
-                'email', 'username', 'phone_number', 'password'
-            ]);
+        // Public registration always creates regular users
+        $userData['role'] = 'user';
 
-            $user = $this->userService->createUser($userData, $credentialData);
+        $credentialData = $request->only([
+            'email', 'username', 'phone_number', 'password'
+        ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'User registered successfully. OTP sent to email.',
-                'data' => [
-                    'user_id' => $user->id,
-                    'email' => $user->credential->email,
-                ]
-            ], 201);
+        $user = $this->userService->createUser($userData, $credentialData);
 
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 400);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'User registered successfully. OTP sent to email.',
+            'data' => [
+                'user_id' => $user->id,
+                'email' => $user->credential->email,
+            ]
+        ], 201);
     }
 
     /**
@@ -58,27 +52,19 @@ class AuthController extends Controller
      */
     public function login(LoginRequest $request): JsonResponse
     {
-        try {
-            $credential = $this->authService->initiateLogin(
-                $request->identifier,
-                $request->password
-            );
+        $credential = $this->authService->initiateLogin(
+            $request->identifier,
+            $request->password
+        );
 
-            return response()->json([
-                'success' => true,
-                'message' => 'OTP sent to your email',
-                'data' => [
-                    'email' => $credential->email,
-                    'next_step' => 'verify_otp'
-                ]
-            ]);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 401);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'OTP sent to your email',
+            'data' => [
+                'email' => $credential->email,
+                'next_step' => 'verify_otp'
+            ]
+        ]);
     }
 
     /**
@@ -86,24 +72,16 @@ class AuthController extends Controller
      */
     public function verifyOtp(VerifyOtpRequest $request): JsonResponse
     {
-        try {
-            $tokens = $this->authService->verifyOtpAndIssueTokens(
-                $request->identifier,
-                $request->otp
-            );
+        $tokens = $this->authService->verifyOtpAndIssueTokens(
+            $request->identifier,
+            $request->otp
+        );
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Login successful',
-                'data' => $tokens
-            ]);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 401);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Login successful',
+            'data' => $tokens
+        ]);
     }
 
     /**
@@ -111,21 +89,13 @@ class AuthController extends Controller
      */
     public function refreshToken(RefreshTokenRequest $request): JsonResponse
     {
-        try {
-            $tokens = $this->jwtService->refreshAccessToken($request->refresh_token);
+        $tokens = $this->jwtService->refreshAccessToken($request->refresh_token);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Token refreshed successfully',
-                'data' => $tokens
-            ]);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 401);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Token refreshed successfully',
+            'data' => $tokens
+        ]);
     }
 
     /**
@@ -133,19 +103,11 @@ class AuthController extends Controller
      */
     public function logout(RefreshTokenRequest $request): JsonResponse
     {
-        try {
-            $this->authService->logout($request->refresh_token);
+        $this->authService->logout($request->refresh_token);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Logged out successfully'
-            ]);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 400);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Logged out successfully'
+        ]);
     }
 }

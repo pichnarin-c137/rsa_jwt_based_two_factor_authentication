@@ -4,8 +4,11 @@ namespace App\Services;
 
 use App\Models\Credential;
 use App\Mail\OtpMail;
+use App\Exceptions\MailDeliveryException;
+use App\Exceptions\OtpRateLimitException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 
 class OtpService
 {
@@ -39,14 +42,31 @@ class OtpService
         $otp = $this->generateOtp();
         $expiryMinutes = random_int($this->otpExpiryMin, $this->otpExpiryMax);
 
-        // Store OTP in database
-        $credential->update([
-            'otp' => $otp,
-            'otp_expiry' => Carbon::now()->addMinutes($expiryMinutes),
-        ]);
+        try {
+            // Store OTP in database first
+            $credential->update([
+                'otp' => $otp,
+                'otp_expiry' => Carbon::now()->addMinutes($expiryMinutes),
+            ]);
 
-        // Send email
-        Mail::to($credential->email)->send(new OtpMail($otp, $expiryMinutes));
+            // Attempt to send email
+            Mail::to($credential->email)->send(new OtpMail($otp, $expiryMinutes));
+
+        } catch (MailDeliveryException $e) {
+            // Rollback OTP on mail failure
+            $credential->clearOtp();
+            throw $e;
+        } catch (\Throwable $e) {
+            // Log and rollback OTP on any other failure
+            Log::error('Failed to send OTP email', [
+                'email' => $credential->email,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Rollback OTP on mail failure
+            $credential->clearOtp();
+            throw new MailDeliveryException('Failed to send OTP email: ' . $e->getMessage(), 0, $e);
+        }
     }
 
     /**
@@ -66,6 +86,7 @@ class OtpService
 
     /**
      * Check if can resend OTP (rate limiting)
+     * Throws exception if rate limit is exceeded
      */
     public function canResendOtp(Credential $credential): bool
     {
@@ -75,7 +96,13 @@ class OtpService
 
         // Allow resend only if OTP has expired or 1 minute has passed
         $oneMinuteAgo = Carbon::now()->subMinute();
-        return Carbon::now()->greaterThan($credential->otp_expiry) ||
-               $credential->updated_at->lessThan($oneMinuteAgo);
+        $canResend = Carbon::now()->greaterThan($credential->otp_expiry) ||
+                     $credential->updated_at->lessThan($oneMinuteAgo);
+
+        if (!$canResend) {
+            throw new OtpRateLimitException('Please wait at least 1 minute before requesting another OTP');
+        }
+
+        return true;
     }
 }

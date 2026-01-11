@@ -5,9 +5,13 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\Credential;
 use App\Models\Role;
+use App\Exceptions\InvalidCredentialsException;
+use App\Exceptions\AccountSuspendedException;
+use App\Exceptions\InvalidOtpException;
+use App\Exceptions\OtpExpiredException;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
-use Exception;
 
 class AuthService
 {
@@ -29,18 +33,21 @@ class AuthService
             ->first();
 
         if (!$credential) {
-            throw new Exception('Invalid credentials');
+            throw new InvalidCredentialsException('Invalid username or password');
         }
 
         // Verify password
         if (!Hash::check($password, $credential->password)) {
-            throw new Exception('Invalid credentials');
+            throw new InvalidCredentialsException('Invalid username or password');
         }
 
         // Check if user is suspended
         if ($credential->user->isSuspended()) {
-            throw new Exception('Account is suspended');
+            throw new AccountSuspendedException('Your account has been suspended');
         }
+
+        // Check rate limiting before sending OTP
+        $this->otpService->canResendOtp($credential);
 
         // Generate and send OTP
         $this->otpService->sendOtp($credential);
@@ -59,12 +66,22 @@ class AuthService
             ->first();
 
         if (!$credential) {
-            throw new Exception('Invalid credentials');
+            throw new InvalidCredentialsException('Invalid credentials');
+        }
+
+        // Check if OTP exists
+        if (!$credential->otp) {
+            throw new InvalidOtpException('No OTP has been generated. Please login first.');
+        }
+
+        // Check if OTP is expired
+        if (Carbon::now()->greaterThan($credential->otp_expiry)) {
+            throw new OtpExpiredException('OTP has expired. Please request a new one.');
         }
 
         // Verify OTP
         if (!$this->otpService->verifyOtp($credential, $otp)) {
-            throw new Exception('Invalid or expired OTP');
+            throw new InvalidOtpException('Invalid OTP code');
         }
 
         $user = $credential->user;
